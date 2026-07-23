@@ -98,5 +98,13 @@
       "problemMatcher": [],
       "detail": "CMake 清理"
     },
+    {
+      "label": "SysConfig",
+      "type": "process",
+      "command": "run_syscfg_main.bat",
+      "group": "build",
+      "problemMatcher": [],
+      "detail": "Run TI SysConfig GUI"
+    }
   ]
 }

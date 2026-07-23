@@ -1,47 +1,43 @@
 /**
  * @file menu_state.cpp
- * @brief 菜单状态机实现 — 纯 C，零 include 依赖（除自身头文件）
+ * @brief 菜单状态机实现
  */
 
 #include "menu_state.h"
 
-void menu_init(Menu *m, const MenuEntry *entries, int count)
+void Menu::init(const MenuEntry *entries, int count)
 {
-    m->entries   = entries;
-    m->count     = count;
-    m->cursor    = 0;
-    m->confirmed = 0;
-    m->running   = 0;
+    entries_   = entries;
+    count_     = count;
+    cursor_    = 0;
+    confirmed_ = false;
+    running_   = false;
 }
 
-void menu_up(Menu *m)
+void Menu::up()
 {
-    if (m->running) return;
-    m->cursor--;
-    if (m->cursor < 0) m->cursor = m->count - 1;
+    if (running_) return;
+    cursor_--;
+    if (cursor_ < 0) cursor_ = count_ - 1;
 }
 
-void menu_down(Menu *m)
+void Menu::down()
 {
-    if (m->running) return;
-    m->cursor++;
-    if (m->cursor >= m->count) m->cursor = 0;
+    if (running_) return;
+    cursor_++;
+    if (cursor_ >= count_) cursor_ = 0;
 }
 
-void menu_ok(Menu *m)
+void Menu::ok()
 {
-    if (m->running)
-        menu_exit_task(m);
-    else
-    {
-        m->confirmed = 1;
-        m->running   = 1;
+    if (running_)
+        exitTask();
+    else {
+        confirmed_ = true;
+        running_   = true;
     }
 }
 
-void menu_enter_task(Menu *m) { m->running = 1; }
-void menu_exit_task(Menu *m)  { m->running = 0; m->confirmed = 0; }
-int  menu_in_task(Menu *m)    { return m->running; }
-
-int  menu_cursor(Menu *m)           { return m->cursor; }
-int  menu_consume_confirm(Menu *m)  { int r = m->confirmed; m->confirmed = 0; return r; }
+void Menu::enterTask()           { running_ = true; }
+void Menu::exitTask()            { running_ = false; confirmed_ = false; }
+bool Menu::consumeConfirm()      { bool r = confirmed_; confirmed_ = false; return r; }

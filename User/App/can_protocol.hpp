@@ -1,39 +1,56 @@
 /**
  * @file can_protocol.hpp
- * @brief CAN 通信协议 — 指令解析 + 状态上报
+ * @brief 主机端 CAN 电机控制类 — 命令发送 + 状态缓存
+ *
+ * 用法:
+ *   CanProtocol can;
+ *   can.init();
+ *   can.tick();                      // 每 1ms
+ *   can.setSpeed(1, 60);             // 电机1 正转 60 RPM
+ *   float ang = can.getAngle(1);     // 读电机1 角度
  */
 
 #ifndef __CAN_PROTOCOL_HPP__
 #define __CAN_PROTOCOL_HPP__
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <stdint.h>
+#include <stdbool.h>
+#include "m0stepper_host.h"
 
-#define CAN_ID_CMD   0x100   ///< 主机 → MSPM0 指令
-#define CAN_ID_STAT  0x200   ///< MSPM0 → 主机 状态
+#define CAN_MAX_MOTORS 8
 
-/// 指令类型
-enum {
-    CMD_NONE      = 0x00,
-    CMD_SET_ANGLE = 0x01,   ///< 角度控制 (×100 deg, max_rpm)
-    CMD_STOP      = 0x02,   ///< 立即停止
-    CMD_OPEN_LOOP = 0x03,   ///< 开环调速 (×10 RPM)
+class CanProtocol
+{
+public:
+    CanProtocol() = default;
+    void init();        ///< 初始化 CAN + 绑定发送函数
+    void tick();        ///< 每 1ms: 收状态帧 → 更新缓存
+
+    /* ---- 电机控制命令 ---- */
+    void setSpeed(uint8_t id, float rpm);
+    void moveTo(uint8_t id, float angle_deg, float max_rpm = 45.0f);
+    void moveAbs(uint8_t id, float angle_deg, int turns, float max_rpm);
+    void timedMove(uint8_t id, float angle_deg, float duration_s);
+    void stop(uint8_t id);
+    void enable(uint8_t id, bool on);
+    void query(uint8_t id, uint8_t sub = 0);
+
+    /* ---- 状态读取 ---- */
+    bool  hasStatus(uint8_t id) const;
+    float getAngle(uint8_t id) const;
+    float getSpeed(uint8_t id) const;
+    int   getTurns(uint8_t id) const;
+    int   getState(uint8_t id) const;
+    bool  isDone(uint8_t id) const;
+
+private:
+    M0Stepper::Status status_[CAN_MAX_MOTORS];  ///< 状态缓存
+    bool              valid_[CAN_MAX_MOTORS] = {};
+
+    void sendCmd_(uint8_t motorId, uint8_t cmd, int16_t p1, int16_t p2, int16_t p3);
 };
 
-/// 状态码
-enum {
-    STAT_IDLE   = 0,       ///< 空闲
-    STAT_MOVING = 1,       ///< 运动中
-    STAT_DONE   = 2,       ///< 到位
-    STAT_ERROR  = 3,       ///< 故障
-};
-
-void can_proto_init(void);          ///< 初始化
-void can_proto_tick(void);          ///< 每 1ms 调用
-
-#ifdef __cplusplus
-}
-#endif
+/* 全局实例 */
+extern CanProtocol can_proto;
 
 #endif

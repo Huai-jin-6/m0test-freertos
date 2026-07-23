@@ -1,10 +1,6 @@
 /**
  * @file ssd1306.cpp
- * @brief SSD1306 OLED 128x64 I2C 驱动（BSP 抽象层）
- *
- * 硬件：SSD1306 @ I2C0, 地址 0x3C, 500kHz Fast
- * 字体：6x8 ASCII，每行 21 字符，共 8 行
- * 注意：每次 I2C 事务发 2 字节（cmd/data + 数据），不超 FIFO 8 字节深度
+ * @brief SSD1306 OLED 128x64 I2C 驱动（器件层）
  */
 
 #include "ssd1306.h"
@@ -13,31 +9,26 @@
 #include <stdio.h>
 #include <stdarg.h>
 
-#define SSD1306_ADDR    0x3C
 #define SSD1306_CMD     0x00
 #define SSD1306_DATA    0x40
 
-/* ---- 光标 ---- */
-static uint8_t g_cursor_x = 0;
-static uint8_t g_cursor_y = 0;
+/* ---- 内部方法 ---- */
 
-/** @brief 发送一个字节到 OLED（模式 + 数据） */
-static void oled_wr_byte(uint8_t dat, uint8_t mode)
+void Ssd1306::_wr_byte(uint8_t dat, uint8_t mode)
 {
     uint8_t buf[2];
     buf[0] = mode ? 0x40 : 0x00;
     buf[1] = dat;
-    bsp_i2c_send(SSD1306_ADDR, buf, 2);
+    _i2c->send(_dev_addr, buf, 2);
 }
 
-static void oled_cmd(uint8_t cmd)   { oled_wr_byte(cmd, 0); }
-static void oled_data(uint8_t dat)  { oled_wr_byte(dat, 1); }
+void Ssd1306::_cmd(uint8_t cmd)   { _wr_byte(cmd, 0); }
+void Ssd1306::_data(uint8_t dat)  { _wr_byte(dat, 1); }
 
-/** @brief 连续发送多个数据字节 */
-static void oled_data_n(const uint8_t *d, uint8_t n)
+void Ssd1306::_data_n(const uint8_t *d, uint8_t n)
 {
     for (uint8_t i = 0; i < n; i++)
-        oled_wr_byte(d[i], 1);
+        _wr_byte(d[i], 1);
 }
 
 /* ---- 6x8 字库 ---- */
@@ -139,9 +130,15 @@ static const uint8_t font6x8[][6] = {
     {0x08,0x04,0x08,0x10,0x08,0x00}, /* ~ */
 };
 
-void ssd1306_init(void)
+/* ---- 公开方法 ---- */
+
+bool Ssd1306::init(const Config &cfg)
 {
-    bsp_delay_us(10000);  // 等 OLED 上电稳定
+    if (!cfg.i2c) return false;
+    _i2c      = cfg.i2c;
+    _dev_addr = cfg.dev_addr;
+
+    bsp_delay_us(10000);
 
     const uint8_t init_cmds[] = {
         0xAE,
@@ -154,54 +151,55 @@ void ssd1306_init(void)
         0xAF,
     };
     for (int i = 0; i < (int)sizeof(init_cmds); i++)
-        oled_cmd(init_cmds[i]);
+        _cmd(init_cmds[i]);
 
-    ssd1306_clear();
+    clear();
+    return true;
 }
 
-void ssd1306_clear(void)
+void Ssd1306::clear()
 {
     uint8_t zero[128];
     for (int i = 0; i < 128; i++) zero[i] = 0x00;
     for (uint8_t page = 0; page < 8; page++)
     {
-        oled_cmd(0xB0 + page);
-        oled_cmd(0x00);
-        oled_cmd(0x10);
-        oled_data_n(zero, 128);
+        _cmd(0xB0 + page);
+        _cmd(0x00);
+        _cmd(0x10);
+        _data_n(zero, 128);
     }
-    g_cursor_x = g_cursor_y = 0;
+    _cursor_x = _cursor_y = 0;
 }
 
-void ssd1306_set_cursor(uint8_t x, uint8_t y) { g_cursor_x = x; g_cursor_y = y; }
+void Ssd1306::set_cursor(uint8_t x, uint8_t y) { _cursor_x = x; _cursor_y = y; }
 
-void ssd1306_putc(char c)
+void Ssd1306::putc(char c)
 {
     if (c < 0x20 || c > 0x7E) c = ' ';
-    if (g_cursor_x > 121) { g_cursor_x = 0; g_cursor_y++; }
-    if (g_cursor_y > 7)   { g_cursor_y = 0; }
+    if (_cursor_x > 121) { _cursor_x = 0; _cursor_y++; }
+    if (_cursor_y > 7)   { _cursor_y = 0; }
 
-    oled_cmd(0xB0 + g_cursor_y);
-    oled_cmd(0x00 + (g_cursor_x & 0x0F));
-    oled_cmd(0x10 + (g_cursor_x >> 4));
+    _cmd(0xB0 + _cursor_y);
+    _cmd(0x00 + (_cursor_x & 0x0F));
+    _cmd(0x10 + (_cursor_x >> 4));
 
     uint8_t idx = c - 0x20;
     uint8_t buf[7];
     for (int i = 0; i < 6; i++) buf[i] = font6x8[idx][i];
     buf[6] = 0x00;
-    oled_data_n(buf, 7);
-    g_cursor_x += 7;
+    _data_n(buf, 7);
+    _cursor_x += 7;
 }
 
-void ssd1306_puts(const char *s) { while (*s) ssd1306_putc(*s++); }
+void Ssd1306::puts(const char *s) { while (*s) putc(*s++); }
 
-void ssd1306_printf(uint8_t x, uint8_t y, const char *fmt, ...)
+void Ssd1306::printf(uint8_t x, uint8_t y, const char *fmt, ...)
 {
     static char buf[32];
     va_list args;
     va_start(args, fmt);
     vsnprintf(buf, sizeof(buf), fmt, args);
     va_end(args);
-    ssd1306_set_cursor(x, y);
-    ssd1306_puts(buf);
+    set_cursor(x, y);
+    puts(buf);
 }

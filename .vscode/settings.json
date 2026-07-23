@@ -39,6 +39,11 @@
             "task": "JLink_flash_win",
             "tooltip": "JLink 烧录 (Windows)"
         },
+        {
+            "label": "[⚙️ SysConfig]",
+            "task": "SysConfig",
+            "tooltip": "TI SysConfig GUI"
+        }
     ],
     "cmake.useCMakePresets": "always"
 }

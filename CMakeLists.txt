@@ -32,6 +32,7 @@ include_directories(
     ./User/App
     ./User/Bsp
     ./User/Device
+	    ./User/Device/vl53l0x
     ./User/Service
     ./User/Algorithm
     ./User/Protocol

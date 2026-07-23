@@ -1,82 +1,83 @@
 /**
  * @file can_protocol.cpp
- * @brief CAN 协议 — 指令解析 + 定时上报状态
- *
- * 主机 → MSPM0: CAN ID 0x100, Data[0]=cmd, Data[1-2]=param1, Data[3-4]=param2
- * MSPM0 → 主机: CAN ID 0x200, Data[0]=status, Data[1-2]=angle×100, Data[3-4]=speed×10
+ * @brief 主机端 CAN 电机控制类实现 — 用 M0Stepper::buildFrame + sendFn
  */
 
 #include "can_protocol.hpp"
 #include "bsp_can.h"
-#include "motor_control.hpp"
+#include <string.h>
 
-static uint32_t g_tick = 0;
+/* ---- 全局实例 ---- */
+CanProtocol can_proto;
 
-void can_proto_init(void)
+/* ================================================================
+ *  生命周期
+ * ================================================================ */
+
+void CanProtocol::init()
 {
-    bsp_can_init();
+    bsp_can.init();
+    bsp_can.enable_irq();
+    memset(valid_, 0, sizeof(valid_));
 }
 
-void can_proto_tick(void)
+void CanProtocol::tick()
 {
-    g_tick++;
-
-    /* ---- 处理接收 ---- */
     uint32_t rx_id;
-    uint8_t  rx_data[8];
-    uint8_t  rx_len;
+    uint8_t  d[8], len;
 
-    if (bsp_can_recv(&rx_id, rx_data, &rx_len))
+    while (bsp_can.recv_read(&rx_id, d, &len))
     {
-        if (rx_id == CAN_ID_CMD && rx_len >= 3)
+        if (rx_id >= 0x201 && rx_id <= 0x200 + CAN_MAX_MOTORS && len >= 8)
         {
-            uint8_t  cmd    = rx_data[0];
-            int16_t  param1 = (int16_t)((rx_data[1] << 8) | rx_data[2]);
-            int16_t  param2 = (int16_t)((rx_data[3] << 8) | rx_data[4]);
-
-            switch (cmd)
+            uint8_t id = (uint8_t)(rx_id - 0x200);
+            if (id >= 1 && id <= CAN_MAX_MOTORS)
             {
-                case CMD_SET_ANGLE: {
-                    float angle   = (float)param1 / 100.0f;      // 角度 °
-                    float max_rpm = (float)param2;               // 限速 RPM
-                    motor_move_to_ex(angle, max_rpm);
-                    break;
-                }
-                case CMD_STOP:
-                    motor_stop();
-                    break;
-                case CMD_OPEN_LOOP: {
-                    float rpm = (float)param1 / 10.0f;
-                    motor_set_speed(rpm);
-                    break;
-                }
-                default:
-                    break;
+                M0Stepper::parseStatus(d, &status_[id - 1]);
+                valid_[id - 1] = status_[id - 1].ckOk;
             }
         }
     }
-
-    /* ---- 每 50ms 上报一次状态 ---- */
-    if ((g_tick % 50) == 0)
-    {
-        uint8_t tx[8];
-
-        int stat = STAT_IDLE;
-        if (motor_move_done())
-            stat = STAT_DONE;
-        else if (motor_target_speed() != 0.0f || motor_is_moving())
-            stat = STAT_MOVING;
-
-        int16_t angle_x100 = (int16_t)(motor_angle() * 100.0f);
-        int16_t speed_x10  = (int16_t)(motor_speed() * 10.0f);
-
-        tx[0] = (uint8_t)stat;
-        tx[1] = (uint8_t)(angle_x100 >> 8);
-        tx[2] = (uint8_t)(angle_x100);
-        tx[3] = (uint8_t)(speed_x10 >> 8);
-        tx[4] = (uint8_t)(speed_x10);
-        tx[5] = 0;  // 错误码保留
-
-        bsp_can_send(CAN_ID_STAT, tx, 6);
-    }
 }
+
+/* ================================================================
+ *  发送辅助
+ * ================================================================ */
+
+void CanProtocol::sendCmd_(uint8_t motorId, uint8_t cmd, int16_t p1, int16_t p2, int16_t p3)
+{
+    uint8_t d[8];
+    buildFrame(d, cmd, p1, p2, p3);
+    bsp_can.send(0x100 + motorId, d, 8);
+}
+
+/* ================================================================
+ *  电机控制命令
+ * ================================================================ */
+
+void CanProtocol::setSpeed(uint8_t id, float rpm)
+    { sendCmd_(id, CMD_SPEED, (int16_t)(rpm * 10.0f), 0, 0); }
+
+void CanProtocol::moveTo(uint8_t id, float ang, float max_rpm)
+    { sendCmd_(id, CMD_POSITION, (int16_t)(ang * 100.0f), 0, (int16_t)max_rpm); }
+
+void CanProtocol::moveAbs(uint8_t id, float ang, int turns, float max_rpm)
+    { sendCmd_(id, CMD_POSITION, (int16_t)(ang * 100.0f), turns, (int16_t)max_rpm); }
+
+void CanProtocol::timedMove(uint8_t id, float ang, float dur)
+    { sendCmd_(id, CMD_TIMED, (int16_t)(ang * 100.0f), (int16_t)(dur * 1000.0f), 0); }
+
+void CanProtocol::stop(uint8_t id)   { sendCmd_(id, CMD_STOP,   0, 0, 0); }
+void CanProtocol::enable(uint8_t id, bool on) { sendCmd_(id, CMD_ENABLE, on ? 1 : 0, 0, 0); }
+void CanProtocol::query(uint8_t id, uint8_t sub) { sendCmd_(id, CMD_QUERY, sub, 0, 0); }
+
+/* ================================================================
+ *  状态读取
+ * ================================================================ */
+
+bool  CanProtocol::hasStatus(uint8_t id) const  { return id >= 1 && id <= CAN_MAX_MOTORS && valid_[id - 1]; }
+float CanProtocol::getAngle(uint8_t id) const   { return hasStatus(id) ? status_[id - 1].angle : 0.0f; }
+float CanProtocol::getSpeed(uint8_t id) const   { return hasStatus(id) ? status_[id - 1].rpm : 0.0f; }
+int   CanProtocol::getTurns(uint8_t id) const   { return hasStatus(id) ? status_[id - 1].turns : 0; }
+int   CanProtocol::getState(uint8_t id) const   { return hasStatus(id) ? status_[id - 1].state : -1; }
+bool  CanProtocol::isDone(uint8_t id) const     { return hasStatus(id) && status_[id - 1].isDone(); }

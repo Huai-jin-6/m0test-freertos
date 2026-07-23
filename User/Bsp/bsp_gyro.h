@@ -1,27 +1,38 @@
 /**
  * @file bsp_gyro.h
- * @brief WT901/JY901 串口陀螺仪 UART 通信层（UART1, PA18/PA17）
+ * @brief WT901/JY901 陀螺仪类 — UART 通信 + 协议解析
  *
- * 协议：0x5A 帧头，5 字节帧，校验和
+ * 协议: 0x5A 帧头, 5 字节, 0xAA=wz, 0xBB=yaw
  */
 
-#ifndef __BSP_GYRO_H__
-#define __BSP_GYRO_H__
+#ifndef __BSP_GYRO_HPP__
+#define __BSP_GYRO_HPP__
 
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+class BspGyro
+{
+public:
+    void init();
+    void poll();
+    void isrHandler();          ///< UART ISR 回调
 
-void bsp_gyro_init(void);
-void bsp_gyro_poll(void);
-float bsp_gyro_get_wz(void);
-float bsp_gyro_get_yaw(void);
-uint32_t bsp_gyro_rx_total(void);
+    float    getWz();
+    float    getYaw();
+    uint32_t rxTotal() const { return rxTotal_; }
 
-#ifdef __cplusplus
-}
-#endif
+private:
+    static constexpr uint8_t RX_BUF_SIZE = 128;
+    uint8_t  rxBuf_[RX_BUF_SIZE];
+    uint8_t  rxHead_ = 0, rxTail_ = 0;
+    uint32_t rxTotal_ = 0;
+    float    wz_  = 0, yaw_ = 0;
+
+    void push_(uint8_t b);
+    int  pop_(uint8_t *b);
+    void parse_(uint8_t byte);
+};
+
+extern BspGyro bsp_gyro;
 
 #endif

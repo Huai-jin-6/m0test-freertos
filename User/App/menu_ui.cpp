@@ -1,85 +1,62 @@
 /**
  * @file menu_ui.cpp
- * @brief 菜单 UI 实现 — 按键消抖 + OLED 渲染
- *
- * 分拆 poll / render，任务运行时上层跳过 render 用自己的显示逻辑。
+ * @brief 菜单 UI 类 — 按键消抖 + OLED 渲染
  */
 
 #include "menu_ui.h"
 #include "ssd1306.h"
-#include "bsp_gpio.h"
-/* 不直接碰 ti_msp_dl_config.h — 按键走 bsp_gpio，OLED 走 ssd1306 */
+#include "ti_msp_dl_config.h"
 
-/* ---- 消抖：连续 DEBOUNCE 次按下 → 置 latch → 触发一次
-         松开后清 latch → 才能再次触发
-         按住不放不会重复触发 ---- */
-#define DEBOUNCE  3
+extern Ssd1306 ssd1306;
 
-typedef struct {
-    int cnt;
-    int latched;   /* 1=已触发，等松开 */
-} BtnState;
+/* ---- 消抖: 连续 DEBOUNCE 次按下触发, 松开后才重新触发 ---- */
 
-static BtnState g_up_btn, g_dn_btn, g_ok_btn;
-
-static int read_btn(int (*get)(void), BtnState *s)
+bool MenuUI::readBtn_(int raw, int &cnt, int &latched)
 {
-    if (get())   /* 按下 */
+    if (raw)   /* 按下 (低电平) */
     {
-        if (!s->latched && ++s->cnt >= DEBOUNCE)
+        if (!latched && ++cnt >= DEBOUNCE)
         {
-            s->latched = 1;    /* 锁住，按住期间不再触发 */
-            s->cnt     = 0;
-            return 1;
+            latched = 1;
+            cnt     = 0;
+            return true;
         }
     }
     else
     {
-        s->cnt     = 0;
-        s->latched = 0;        /* 松开 → 解锁 */
+        cnt     = 0;
+        latched = 0;
     }
-    return 0;
+    return false;
 }
 
-/* ================================================================
- *  公开 API
- * ================================================================ */
+/* ---- 公开方法 ---- */
 
-void menu_ui_init(MenuUI *ui, Menu *state)
+void MenuUI::init(Menu *state) { state_ = state; }
+
+void MenuUI::poll()
 {
-    ui->state = state;
+    int up_raw = DL_GPIO_readPins(Keys_PORT, Keys_Key1_up_PIN) == 0;
+    int dn_raw = DL_GPIO_readPins(Keys_PORT, Keys_Key2_dn_PIN) == 0;
+    int ok_raw = DL_GPIO_readPins(Keys_PORT, Keys_Key3_ok_PIN) == 0;
+
+    if (readBtn_(up_raw, upCnt_, upLatched_)) state_->up();
+    if (readBtn_(dn_raw, dnCnt_, dnLatched_)) state_->down();
+    if (readBtn_(ok_raw, okCnt_, okLatched_)) state_->ok();
 }
 
-void menu_ui_poll(MenuUI *ui)
+void MenuUI::render()
 {
-    Menu *m = ui->state;
+    const MenuEntry *e = state_->currentEntry();
 
-    /* 扫描按键 → 更新状态机 */
-    if (read_btn(bsp_btn_up, &g_up_btn)) menu_up(m);
-    if (read_btn(bsp_btn_dn, &g_dn_btn)) menu_down(m);
-    if (read_btn(bsp_btn_ok, &g_ok_btn)) menu_ok(m);
-}
+    ssd1306.printf(0, 0, "%s", e->title);
+    ssd1306.printf(0, 2, "%s", e->desc);
 
-void menu_ui_render(MenuUI *ui)
-{
-    Menu *m = ui->state;
-    const MenuEntry *e = &m->entries[m->cursor];
-
-    ssd1306_printf(0, 0, "%s", e->title);
-    ssd1306_printf(0, 2, "%s", e->desc);
-
-    if (m->running)
-        ssd1306_printf(0, 6, "OK: Exit");
+    if (state_->inTask())
+        ssd1306.printf(0, 6, "OK: Exit");
     else
-        ssd1306_printf(0, 6, "UP/DN:Sel OK:Go");
+        ssd1306.printf(0, 6, "UP/DN:Sel OK:Go");
 }
 
-int menu_ui_selected(MenuUI *ui)
-{
-    return menu_consume_confirm(ui->state) ? menu_cursor(ui->state) : -1;
-}
-
-int menu_ui_in_task(MenuUI *ui)
-{
-    return menu_in_task(ui->state);
-}
+int  MenuUI::selected() const { return state_->consumeConfirm() ? state_->cursor() : -1; }
+bool MenuUI::inTask()   const { return state_->inTask(); }

@@ -1,61 +1,75 @@
 /**
  * @file motor_control.hpp
- * @brief 电机控制 — 应用层统一接口
- *
- * === 速度控制（开环）===
- *   motor_set_speed(120)       // 120 RPM
- *   motor_set_speed(-60)       // 60 RPM 反转
- *   motor_stop()               // 停
- *
- * === 位置控制（编码器闭环）===
- *   motor_move_to(90)          // 转到 90°（限速 45 RPM）
- *   motor_move_to_ex(180, 60)  // 转到 180°（限速 60 RPM）
- *   motor_move_done()          // true=到位
- *
- * === 读取 ===
- *   motor_speed()              // 实测 RPM
- *   motor_angle()              // 编码器角度 °
- *   motor_target_speed()       // 目标 RPM
+ * @brief 步进电机控制类 — 速度开环 + 位置闭环 GOTO + 定时转动
  *
  * === 用法 ===
- *   motor_init();
- *   while (1) {
- *       encoder_read(&enc);
- *       motor_tick(&enc);
- *   }
+ *   MotorControl motor;
+ *   motor.init();
+ *   motor.measureTick(&enc);     // 1ms: 测速 + 圈数追踪
+ *   motor.controlTick(&enc);     // 5ms: GOTO/速度/定时控制
+ *   motor.setSpeed(120);
+ *   motor.moveTo(90);
  */
 
 #ifndef __MOTOR_CONTROL_HPP__
 #define __MOTOR_CONTROL_HPP__
 
 #include "mt6816.h"
+#include "speed_measure.h"
 
-#ifdef __cplusplus
-extern "C" {
+class MotorControl
+{
+public:
+    MotorControl() = default;
+    void init();
+    void measureTick(MT6816_Data *enc);  ///< 1ms: 测速 + 圈数追踪
+    void controlTick(MT6816_Data *enc);  ///< 5ms: 控制逻辑
+
+    /* ---- 速度 ---- */
+    void setSpeed(float rpm);
+    void stop();
+
+    /* ---- 位置 ---- */
+    void moveTo(float angle_deg, float max_rpm = 45.0f);      ///< 单圈就近
+    void moveAbs(float angle_deg, int turns, float max_rpm);  ///< 绝对位置
+    bool isDone() const;                                       ///< GOTO 到位?
+
+    /* ---- 定时转动 ---- */
+    void timedMove(float angle_deg, float duration_s);
+    bool timedMoveDone() const;
+
+    /* ---- 读取 ---- */
+    float speed()        const { return sm_.actual_rpm; }
+    float angle()        const { return lastAngle_; }
+    int   turns()        const { return totalTurns_; }
+    float targetSpeed()  const { return targetRpm_; }
+    bool  isMoving()     const { return mode_ != IDLE; }
+
+private:
+    enum Mode { IDLE, SPEED, GOTO, TIMED };
+
+    SpeedMeasure sm_;
+    Mode         mode_          = IDLE;
+    float        targetRpm_     = 0.0f;
+    float        lastAngle_     = 0.0f;
+    int          totalTurns_    = 0;
+    bool         turnsInit_     = false;
+
+    /* GOTO */
+    float        gotoAbs_       = 0.0f;
+    float        gotoMaxRpm_    = 45.0f;
+    float        gotoCurRpm_    = 0.0f;
+    uint32_t     gotoDoneTicks_ = 0;
+
+    /* TIMED */
+    uint32_t     timedTicks_    = 0;
+
+    static constexpr float KP          = 2.0f;
+    static constexpr float ACCEL       = 10.0f;
+    static constexpr float MIN_RPM     = 5.0f;
+    static constexpr float STOP_THRES  = 0.15f;
+    static constexpr float BACK_THRES  = 1.0f;
+    static constexpr uint32_t DONE_TICKS = 120;
+};
+
 #endif
-
-/* ---- 生命周期 ---- */
-void motor_init(void);
-void motor_tick(MT6816_Data *enc);          ///< 控制逻辑（GOTO/速度环），5ms 周期
-void motor_measure_tick(MT6816_Data *enc);  ///< 测速 + 角度记录（不碰硬件），1ms 周期
-
-/* ---- 速度指令（开环） ---- */
-void motor_set_speed(float rpm);
-void motor_stop(void);
-
-/* ---- 位置指令（编码器闭环） ---- */
-void motor_move_to(float angle_deg);
-void motor_move_to_ex(float angle_deg, float max_rpm);
-int  motor_move_done(void);
-
-/* ---- 读取 ---- */
-float motor_speed(void);
-float motor_angle(void);
-float motor_target_speed(void);
-int   motor_is_moving(void);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* __MOTOR_CONTROL_HPP__ */

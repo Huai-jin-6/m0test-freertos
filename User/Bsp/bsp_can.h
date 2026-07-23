@@ -1,28 +1,40 @@
 /**
  * @file bsp_can.h
- * @brief BSP CAN 抽象 — 中断接收 + 查询发送
+ * @brief CAN 通信 BSP 层 — 非阻塞发送 + 环形接收缓冲 + ISR
  *
- * 换 MCU 时只需重写 bsp_can.cpp，接口保持不变
- * PA12=CAN_TX, PA13=CAN_RX, 250kbps, CAN 2.0 标准帧
+ * PA12=CAN_TX, PA13=CAN_RX, 250kbps
  */
 
-#ifndef __BSP_CAN_H__
-#define __BSP_CAN_H__
+#ifndef __BSP_CAN_HPP__
+#define __BSP_CAN_HPP__
 
 #include <stdint.h>
 #include <stdbool.h>
 
-#ifdef __cplusplus
-extern "C" {
+class BspCan
+{
+public:
+    void init();
+    void enable_irq();
+    void disable_irq();
+
+    bool send(uint32_t id, const uint8_t *data, uint8_t len);
+    bool recv_read(uint32_t *id, uint8_t *data, uint8_t *len);
+
+    /* ISR 回调，由 MCAN0_INST_IRQHandler 调用 */
+    void isr_handler();
+
+private:
+    static constexpr uint8_t RX_BUF_SIZE = 16;
+
+    uint32_t _rx_id[RX_BUF_SIZE];
+    uint8_t  _rx_data[RX_BUF_SIZE][8];
+    uint8_t  _rx_len[RX_BUF_SIZE];
+    uint8_t  _rx_head = 0;
+    uint8_t  _rx_tail = 0;
+};
+
+/* 全局实例 — ISR 通过此指针访问 */
+extern BspCan bsp_can;
+
 #endif
-
-void bsp_can_init(void);
-bool bsp_can_send(uint32_t id, uint8_t *data, uint8_t len);
-bool bsp_can_recv(uint32_t *id, uint8_t *data, uint8_t *len);
-bool bsp_can_has_msg(void);
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* __BSP_CAN_H__ */

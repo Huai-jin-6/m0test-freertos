@@ -1,24 +1,22 @@
 /**
  * @file bsp_spi.h
- * @brief BSP SPI 抽象 — 全双工单字节传输
+ * @brief BSP SPI 抽象 (MSPM0 SPI1, Mode 3, 8MHz)
  *
  * 换 MCU 时只需重写 bsp_spi.cpp，接口保持不变
  */
 
-#ifndef __BSP_SPI_H__
-#define __BSP_SPI_H__
+#ifndef __BSP_SPI_HPP__
+#define __BSP_SPI_HPP__
 
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
+class BspSpi
+{
+public:
+    void     init();
+    uint8_t  transfer(uint8_t tx);  ///< 全双工单字节，超时返回 0
+    void     csHigh();              ///< 软件片选拉高 (PB6)
+    void     csLow();               ///< 软件片选拉低
+};
+
 #endif
-
-void    bsp_spi_init(void);
-uint8_t bsp_spi_transfer(uint8_t tx);  ///< 全双工单字节（发 tx 同时收 rx）
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* __BSP_SPI_H__ */

@@ -1,40 +1,53 @@
 /**
  * @file stepper_motor.cpp
- * @brief 步进电机 STEP+DIR — 使用 Bsp 层 PWM + GPIO
- *
- * 速度公式：step_freq = RPM × STEPS_PER_REV / 60
- * Bsp 层负责硬件 PWM 生成，本层只做数学换算
+ * @brief 步进电机 STEP+DIR — 速度公式: freq = RPM × 6400 / 60
  */
 
 #include "stepper_motor.h"
 #include "bsp_pwm.h"
-#include "bsp_gpio.h"
+#include "ti_msp_dl_config.h"
 
-#define STEPS_PER_REV   6400
+#define DIR_PORT  STP_pins_PORT
+#define DIR_PIN   STP_pins_Dir_PIN
 
-void stepper_init(void)
+bool StepperMotor::init(const Config &cfg)
 {
-    bsp_dir_high();
-    bsp_step_pwm_init();
+    if (!cfg.pwm) return false;
+    _pwm = cfg.pwm;
+    DL_GPIO_setPins(DIR_PORT, DIR_PIN);
+    _pwm->init();
+    return true;
 }
 
-void stepper_set_speed(float rpm)
+void StepperMotor::set_speed(float rpm)
 {
     /* 方向 */
     if (rpm >= 0.0f)
-        bsp_dir_high();
+        DL_GPIO_setPins(DIR_PORT, DIR_PIN);
     else {
-        bsp_dir_low();
+        DL_GPIO_clearPins(DIR_PORT, DIR_PIN);
         rpm = -rpm;
     }
 
-    /* 停止 */
+    /* 停止 (< 0.5 RPM) */
     if (rpm < 0.5f) {
-        bsp_step_pwm_set_freq(0);
+        _pwm->set_freq(0);
         return;
     }
 
     /* RPM → 脉冲频率(Hz) */
     uint32_t freq = (uint32_t)(rpm * (float)STEPS_PER_REV / 60.0f);
-    bsp_step_pwm_set_freq(freq);
+    _pwm->set_freq(freq);
+}
+
+void StepperMotor::enable(bool on)
+{
+#ifdef EN_PORT
+    if (on)
+        DL_GPIO_clearPins(EN_PORT, EN_En_pin_PIN);
+    else
+        DL_GPIO_setPins(EN_PORT, EN_En_pin_PIN);
+#else
+    (void)on;
+#endif
 }

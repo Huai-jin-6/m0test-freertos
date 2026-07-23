@@ -1,52 +1,42 @@
 /**
  * @file menu_state.h
- * @brief 菜单状态机（Device 层 — 纯逻辑，零硬件依赖）
- *
- * 只管理：光标移动、确认/取消、任务进入/退出。
- * 不碰 OLED、不碰按键、不碰任何硬件。
+ * @brief 菜单状态机（纯逻辑，零硬件依赖）
  */
 
-#ifndef __MENU_STATE_H__
-#define __MENU_STATE_H__
+#ifndef __MENU_STATE_HPP__
+#define __MENU_STATE_HPP__
 
 #include <stdint.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-typedef struct {
+struct MenuEntry
+{
     const char *title;
     const char *desc;
-} MenuEntry;
+};
 
-typedef struct {
-    const MenuEntry *entries;
-    int              count;
-    int              cursor;
-    int              confirmed;   /* OK 被按下的那一帧为 1，上层读取后应清零 */
-    int              running;     /* 1=任务运行中 */
-} Menu;
+class Menu
+{
+public:
+    void init(const MenuEntry *entries, int count);
 
-/** 初始化 */
-void menu_init(Menu *m, const MenuEntry *entries, int count);
+    void up();
+    void down();
+    void ok();
 
-/** 上/下/确认 — 每帧调用一次 */
-void menu_up(Menu *m);
-void menu_down(Menu *m);
-void menu_ok(Menu *m);
+    void enterTask();
+    void exitTask();
+    bool inTask() const { return running_; }
 
-/** 任务模式切换 */
-void menu_enter_task(Menu *m);
-void menu_exit_task(Menu *m);
-int  menu_in_task(Menu *m);
+    int  cursor() const          { return cursor_; }
+    const MenuEntry *currentEntry() const { return &entries_[cursor_]; }
+    bool consumeConfirm();        ///< 返回 true 并清零，只触发一次
 
-/** 读取当前状态 */
-int  menu_cursor(Menu *m);
-int  menu_consume_confirm(Menu *m);   /* 返回 1 并清零，只触发一次 */
-
-#ifdef __cplusplus
-}
-#endif
+private:
+    const MenuEntry *entries_  = nullptr;
+    int              count_    = 0;
+    int              cursor_   = 0;
+    bool             confirmed_ = false;
+    bool             running_   = false;
+};
 
 #endif

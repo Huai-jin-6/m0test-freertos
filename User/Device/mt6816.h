@@ -1,19 +1,15 @@
 /**
  * @file mt6816.h
- * @brief MT6816 14-bit 磁编码器驱动（器件层）
+ * @brief MT6816 14-bit 磁编码器 — 器件层类封装
  *
- * 依赖：bsp_spi.h / bsp_gpio.h
+ * 依赖：BspSpi
  * 与 MCU 无关，换平台只需 Bsp 层实现同名函数
  */
 
-#ifndef __MT6816_H__
-#define __MT6816_H__
+#ifndef __MT6816_HPP__
+#define __MT6816_HPP__
 
 #include <stdint.h>
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /** @brief 编码器数据结构体 */
 typedef struct
@@ -25,11 +21,28 @@ typedef struct
     float   angle;      ///< 角度制（0°~360°）
 } MT6816_Data;
 
-void mt6816_init(void);                       ///< 初始化：CS 拉高，结构体清零
-void mt6816_read(MT6816_Data *data);          ///< 读一次角度数据
-
 #ifdef __cplusplus
-}
-#endif
 
-#endif /* __MT6816_H__ */
+class BspSpi;
+
+class Mt6816
+{
+public:
+    struct Config
+    {
+        BspSpi *spi = nullptr;
+    };
+
+    bool init(const Config &cfg);
+    void read(MT6816_Data *data);
+
+private:
+    BspSpi *_spi = nullptr;
+
+    static constexpr uint8_t REG_HIGH = 0x83;  ///< 读 0x03：角度高 8 位
+    static constexpr uint8_t REG_LOW  = 0x84;  ///< 读 0x04：角度低 6 位 + 状态
+};
+
+#endif /* __cplusplus */
+
+#endif

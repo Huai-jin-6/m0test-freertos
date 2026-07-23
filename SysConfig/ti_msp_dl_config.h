@@ -164,14 +164,14 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define UART_IMU601_INST_FREQUENCY                                      40000000
 #define UART_IMU601_INST_IRQHandler                             UART2_IRQHandler
 #define UART_IMU601_INST_INT_IRQN                                 UART2_INT_IRQn
-#define GPIO_UART_IMU601_RX_PORT                                           GPIOA
-#define GPIO_UART_IMU601_TX_PORT                                           GPIOA
-#define GPIO_UART_IMU601_RX_PIN                                   DL_GPIO_PIN_22
-#define GPIO_UART_IMU601_TX_PIN                                   DL_GPIO_PIN_21
-#define GPIO_UART_IMU601_IOMUX_RX                                (IOMUX_PINCM47)
-#define GPIO_UART_IMU601_IOMUX_TX                                (IOMUX_PINCM46)
-#define GPIO_UART_IMU601_IOMUX_RX_FUNC                 IOMUX_PINCM47_PF_UART2_RX
-#define GPIO_UART_IMU601_IOMUX_TX_FUNC                 IOMUX_PINCM46_PF_UART2_TX
+#define GPIO_UART_IMU601_RX_PORT                                           GPIOB
+#define GPIO_UART_IMU601_TX_PORT                                           GPIOB
+#define GPIO_UART_IMU601_RX_PIN                                   DL_GPIO_PIN_16
+#define GPIO_UART_IMU601_TX_PIN                                   DL_GPIO_PIN_15
+#define GPIO_UART_IMU601_IOMUX_RX                                (IOMUX_PINCM33)
+#define GPIO_UART_IMU601_IOMUX_TX                                (IOMUX_PINCM32)
+#define GPIO_UART_IMU601_IOMUX_RX_FUNC                 IOMUX_PINCM33_PF_UART2_RX
+#define GPIO_UART_IMU601_IOMUX_TX_FUNC                 IOMUX_PINCM32_PF_UART2_TX
 #define UART_IMU601_BAUD_RATE                                           (115200)
 #define UART_IMU601_IBRD_40_MHZ_115200_BAUD                                 (21)
 #define UART_IMU601_FBRD_40_MHZ_115200_BAUD                                 (45)
@@ -204,35 +204,59 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 
 
 /* Port definition for Pin Group LED */
-#define LED_PORT                                                         (GPIOA)
+#define LED_PORT                                                         (GPIOB)
 
-/* Defines for LED22: GPIOA.14 with pinCMx 36 on package pin 29 */
-#define LED_LED22_PIN                                           (DL_GPIO_PIN_14)
-#define LED_LED22_IOMUX                                          (IOMUX_PINCM36)
+/* Defines for LED22: GPIOB.22 with pinCMx 50 on package pin 21 */
+#define LED_LED22_PIN                                           (DL_GPIO_PIN_22)
+#define LED_LED22_IOMUX                                          (IOMUX_PINCM50)
 /* Port definition for Pin Group SPI_CS */
 #define SPI_CS_PORT                                                      (GPIOB)
 
-/* Defines for SPI_CS0: GPIOB.6 with pinCMx 23 on package pin 20 */
+/* Defines for SPI_CS0: GPIOB.6 with pinCMx 23 on package pin 58 */
 #define SPI_CS_SPI_CS0_PIN                                       (DL_GPIO_PIN_6)
 #define SPI_CS_SPI_CS0_IOMUX                                     (IOMUX_PINCM23)
 /* Port definition for Pin Group STP_pins */
 #define STP_pins_PORT                                                    (GPIOA)
 
-/* Defines for Dir: GPIOA.27 with pinCMx 60 on package pin 47 */
+/* Defines for Dir: GPIOA.27 with pinCMx 60 on package pin 31 */
 #define STP_pins_Dir_PIN                                        (DL_GPIO_PIN_27)
 #define STP_pins_Dir_IOMUX                                       (IOMUX_PINCM60)
 /* Port definition for Pin Group Keys */
 #define Keys_PORT                                                        (GPIOA)
 
-/* Defines for Key1_up: GPIOA.28 with pinCMx 3 on package pin 3 */
+/* Defines for Key1_up: GPIOA.28 with pinCMx 3 on package pin 35 */
 #define Keys_Key1_up_PIN                                        (DL_GPIO_PIN_28)
 #define Keys_Key1_up_IOMUX                                        (IOMUX_PINCM3)
-/* Defines for Key2_dn: GPIOA.25 with pinCMx 55 on package pin 45 */
+/* Defines for Key2_dn: GPIOA.25 with pinCMx 55 on package pin 26 */
 #define Keys_Key2_dn_PIN                                        (DL_GPIO_PIN_25)
 #define Keys_Key2_dn_IOMUX                                       (IOMUX_PINCM55)
-/* Defines for Key3_ok: GPIOA.17 with pinCMx 39 on package pin 32 */
+/* Defines for Key3_ok: GPIOA.17 with pinCMx 39 on package pin 10 */
 #define Keys_Key3_ok_PIN                                        (DL_GPIO_PIN_17)
 #define Keys_Key3_ok_IOMUX                                       (IOMUX_PINCM39)
+/* Defines for PL: GPIOB.3 with pinCMx 16 on package pin 51 */
+#define Gray_PL_PORT                                                     (GPIOB)
+#define Gray_PL_PIN                                              (DL_GPIO_PIN_3)
+#define Gray_PL_IOMUX                                            (IOMUX_PINCM16)
+/* Defines for SCK: GPIOB.2 with pinCMx 15 on package pin 50 */
+#define Gray_SCK_PORT                                                    (GPIOB)
+#define Gray_SCK_PIN                                             (DL_GPIO_PIN_2)
+#define Gray_SCK_IOMUX                                           (IOMUX_PINCM15)
+/* Defines for SDA: GPIOA.7 with pinCMx 14 on package pin 49 */
+#define Gray_SDA_PORT                                                    (GPIOA)
+#define Gray_SDA_PIN                                             (DL_GPIO_PIN_7)
+#define Gray_SDA_IOMUX                                           (IOMUX_PINCM14)
+/* Port definition for Pin Group VL */
+#define VL_PORT                                                          (GPIOA)
+
+/* Defines for VL_SDA: GPIOA.16 with pinCMx 38 on package pin 9 */
+#define VL_VL_SDA_PIN                                           (DL_GPIO_PIN_16)
+#define VL_VL_SDA_IOMUX                                          (IOMUX_PINCM38)
+/* Defines for VL_SCL: GPIOA.15 with pinCMx 37 on package pin 8 */
+#define VL_VL_SCL_PIN                                           (DL_GPIO_PIN_15)
+#define VL_VL_SCL_IOMUX                                          (IOMUX_PINCM37)
+/* Defines for VL_XSHUT: GPIOA.31 with pinCMx 6 on package pin 39 */
+#define VL_VL_XSHUT_PIN                                         (DL_GPIO_PIN_31)
+#define VL_VL_XSHUT_IOMUX                                         (IOMUX_PINCM6)
 
 
 /* Defines for MCAN0 */
@@ -265,7 +289,8 @@ bool SYSCFG_DL_SYSCTL_SYSPLL_init(void);
 #define MCAN0_INST_MCAN_FIFO_0_START_ADDR          (172)
 #define MCAN0_INST_MCAN_FIFO_0_NUM                 (3)
 
-#define MCAN0_INST_MCAN_INTERRUPTS (DL_MCAN_INTR_MASK_ALL)
+#define MCAN0_INST_MCAN_INTERRUPTS (DL_MCAN_INTERRUPT_RF0N | \
+						DL_MCAN_INTERRUPT_TEFN)
 
 
 

@@ -1,130 +1,139 @@
 /**
  * @file motor_control.cpp
- * @brief 电机控制 — 应用层实现（速度开环 / 位置闭环 / GOTO）
+ * @brief 步进电机控制类 — 速度开环 / 位置闭环 GOTO / 定时转动
  */
 
 #include "motor_control.hpp"
 #include "stepper_motor.h"
 #include "speed_measure.h"
 
-/* ---- 内部模式 ---- */
-typedef enum { MODE_IDLE, MODE_SPEED, MODE_GOTO } Mode;
-
-static SpeedMeasure g_sm;
-static Mode         g_mode        = MODE_IDLE;
-static float     g_target_rpm  = 0.0f;
-static float     g_last_angle  = 0.0f;
-
-/* ---- GOTO 参数 ---- */
-static float     g_goto_angle     = 0.0f;
-static float     g_goto_max_rpm   = 45.0f;
-static uint32_t  g_goto_done_ticks = 0;
-#define GOTO_KP          2.0f
-#define GOTO_DONE_THRES  1.0f     ///< 到位角度阈值 (°)
-#define GOTO_DONE_TICKS  100      ///< 持续 100ms
+extern StepperMotor stepper_motor;
 
 /* ================================================================
- *  公开 API
+ *  初始化
  * ================================================================ */
 
-void motor_init(void)
+void MotorControl::init()
 {
-    stepper_init();
-    speed_measure_init(&g_sm);
-    g_mode       = MODE_IDLE;
-    g_target_rpm = 0.0f;
+    speed_measure_init(&sm_);
+    mode_      = IDLE;
+    targetRpm_ = 0.0f;
 }
 
-void motor_measure_tick(MT6816_Data *enc)
+/* ================================================================
+ *  measureTick — 每 1ms: 测速 + 圈数追踪
+ * ================================================================ */
+
+void MotorControl::measureTick(MT6816_Data *enc)
 {
-    /* 测速 + 角度记录 — 纯计算，不碰硬件，可高频 1ms 调用 */
-    speed_measure_update(&g_sm, enc);
-    g_last_angle = enc->angle;
+    speed_measure_update(&sm_, enc);
+
+    if (turnsInit_) {
+        float d = enc->angle - lastAngle_;
+        if      (d >  180.0f) totalTurns_--;
+        else if (d < -180.0f) totalTurns_++;
+    } else {
+        turnsInit_ = true;
+    }
+    lastAngle_ = enc->angle;
 }
 
-void motor_tick(MT6816_Data *enc)
+/* ================================================================
+ *  controlTick — 每 5ms: GOTO / SPEED / TIMED 控制
+ * ================================================================ */
+
+void MotorControl::controlTick(MT6816_Data *enc)
 {
-    /* ---- GOTO：P 直驱，不经过速度 PID ---- */
-    if (g_mode == MODE_GOTO)
+    /* ---- GOTO ---- */
+    if (mode_ == GOTO)
     {
-        float error = g_goto_angle - enc->angle;
-        if (error > 180.0f)  error -= 360.0f;
-        if (error < -180.0f) error += 360.0f;
-
-        float rpm = -error * GOTO_KP;
-        if (rpm > g_goto_max_rpm)   rpm =  g_goto_max_rpm;
-        if (rpm < -g_goto_max_rpm)  rpm = -g_goto_max_rpm;
-
+        float cur_abs = totalTurns_ * 360.0f + enc->angle;
+        float error   = gotoAbs_ - cur_abs;
+        float rpm     = -error * KP;
+        if (rpm >  gotoMaxRpm_) rpm =  gotoMaxRpm_;
+        if (rpm < -gotoMaxRpm_) rpm = -gotoMaxRpm_;
         float abs_err = (error > 0) ? error : -error;
-        if (abs_err < GOTO_DONE_THRES)
-            g_goto_done_ticks++;
-        else
-            g_goto_done_ticks = 0;
 
-        if (g_goto_done_ticks >= GOTO_DONE_TICKS)
-        {
-            stepper_set_speed(0.0f);
-            g_target_rpm = 0.0f;
+        if (gotoDoneTicks_ > 0) {
+            gotoCurRpm_ = 0.0f;
+            stepper_motor.set_speed(0.0f);
+            targetRpm_ = 0.0f;
+            if (abs_err < BACK_THRES) gotoDoneTicks_++;
+            else                      gotoDoneTicks_ = 0;
+        } else if (abs_err < STOP_THRES) {
+            gotoCurRpm_ = 0.0f;
+            stepper_motor.set_speed(0.0f);
+            targetRpm_ = 0.0f;
+            gotoDoneTicks_ = 1;
+        } else {
+            if (rpm > 0.0f && rpm < MIN_RPM)  rpm = MIN_RPM;
+            if (rpm < 0.0f && rpm > -MIN_RPM) rpm = -MIN_RPM;
+            float delta = rpm - gotoCurRpm_;
+            if (delta >  ACCEL) rpm = gotoCurRpm_ + ACCEL;
+            if (delta < -ACCEL) rpm = gotoCurRpm_ - ACCEL;
+            gotoCurRpm_ = rpm;
+            targetRpm_  = rpm;
+            stepper_motor.set_speed(rpm);
         }
-        else if (abs_err < GOTO_DONE_THRES)
-        {
-            /* 已进入阈值区，停转等 settling */
-            stepper_set_speed(0.0f);
-            g_target_rpm = 0.0f;
-        }
-        else
-        {
-            /* 最低速保底 */
-            if (rpm > 0.0f && rpm < 3.0f)  rpm = 3.0f;
-            if (rpm < 0.0f && rpm > -3.0f) rpm = -3.0f;
-            g_target_rpm = rpm;
-            stepper_set_speed(rpm);
-        }
+        if (gotoDoneTicks_ >= DONE_TICKS) mode_ = IDLE;
     }
 
-    /* ---- 开环速度 ---- */
-    if (g_mode == MODE_SPEED)
-        stepper_set_speed(g_target_rpm);
+    /* ---- 速度开环 ---- */
+    if (mode_ == SPEED)
+        stepper_motor.set_speed(targetRpm_);
+
+    /* ---- 定时转动 ---- */
+    if (mode_ == TIMED) {
+        if (timedTicks_ > 0) timedTicks_--;
+        else mode_ = IDLE;
+    }
 }
 
-/* ---- 速度指令 ---- */
+/* ================================================================
+ *  速度指令
+ * ================================================================ */
 
-void motor_set_speed(float rpm)
+void MotorControl::setSpeed(float rpm) { mode_ = SPEED; targetRpm_ = rpm; }
+void MotorControl::stop()             { mode_ = IDLE; targetRpm_ = 0.0f; timedTicks_ = 0; stepper_motor.set_speed(0.0f); }
+
+/* ================================================================
+ *  位置指令
+ * ================================================================ */
+
+void MotorControl::moveTo(float angle_deg, float max_rpm)
 {
-    g_mode       = MODE_SPEED;
-    g_target_rpm = rpm;
+    float cur_abs = totalTurns_ * 360.0f + lastAngle_;
+    float target  = angle_deg;
+    while (target - cur_abs >  180.0f) target -= 360.0f;
+    while (target - cur_abs < -180.0f) target += 360.0f;
+    int turns = (int)(target / 360.0f);
+    if (target < 0) turns--;
+    moveAbs(angle_deg, turns, max_rpm);
 }
 
-void motor_stop(void)
+void MotorControl::moveAbs(float angle_deg, int turns, float max_rpm)
 {
-    g_mode       = MODE_IDLE;
-    g_target_rpm = 0.0f;
-    stepper_set_speed(0.0f);
+    gotoAbs_       = turns * 360.0f + angle_deg;
+    gotoMaxRpm_    = max_rpm > 0 ? max_rpm : 45.0f;
+    gotoDoneTicks_ = 0;
+    gotoCurRpm_    = 0.0f;
+    mode_          = GOTO;
 }
 
-/* ---- 位置指令 ---- */
+bool MotorControl::isDone() const { return gotoDoneTicks_ >= DONE_TICKS; }
 
-void motor_move_to(float angle_deg)
+void MotorControl::timedMove(float angle_deg, float duration_s)
 {
-    motor_move_to_ex(angle_deg, 45.0f);
+    float cur_abs = totalTurns_ * 360.0f + lastAngle_;
+    float target  = angle_deg;
+    while (target - cur_abs >  180.0f) target -= 360.0f;
+    while (target - cur_abs < -180.0f) target += 360.0f;
+    float dist = target - cur_abs;
+    float rpm  = dist / 360.0f * 60.0f / duration_s;
+    mode_        = TIMED;
+    targetRpm_   = rpm;
+    timedTicks_  = (uint32_t)(duration_s * 200.0f);
+    stepper_motor.set_speed(rpm);
 }
 
-void motor_move_to_ex(float angle_deg, float max_rpm)
-{
-    g_goto_angle     = angle_deg;
-    g_goto_max_rpm   = max_rpm;
-    g_goto_done_ticks = 0;
-    g_mode = MODE_GOTO;
-}
-
-int motor_move_done(void)
-{
-    return g_goto_done_ticks >= GOTO_DONE_TICKS;
-}
-
-/* ---- 读取 ---- */
-
-float motor_speed(void)         { return g_sm.actual_rpm; }
-float motor_angle(void)         { return g_last_angle; }
-float motor_target_speed(void)  { return g_target_rpm; }
-int   motor_is_moving(void)     { return g_mode != MODE_IDLE; }
+bool MotorControl::timedMoveDone() const { return mode_ != TIMED; }

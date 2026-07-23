@@ -1,53 +1,33 @@
 /**
  * @file menu_ui.h
- * @brief 菜单 UI 层（App 层 — 按键输入 + OLED 输出）
- *
- * 依赖：menu_state（Device 层）、ssd1306（Device 层）、bsp_gpio（Bsp 层）
- *
- * 用法：
- *   menu_ui_init(&ui, &state);
- *   menu_init(&state, entries, count);
- *   while (1) {
- *       menu_ui_poll(&ui);     // 扫描按键 + 更新状态
- *       if (menu_ui_in_task(&ui)) {
- *           run_task();        // 任务用自己的 OLED 渲染
- *       } else {
- *           menu_ui_render(&ui);  // 菜单浏览画面
- *       }
- *       vTaskDelay(10);
- *   }
+ * @brief 菜单 UI 类 — 按键消抖 + OLED 渲染
  */
 
-#ifndef __MENU_UI_H__
-#define __MENU_UI_H__
+#ifndef __MENU_UI_HPP__
+#define __MENU_UI_HPP__
 
 #include "menu_state.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+class Menu;
+class Ssd1306;
 
-typedef struct {
-    Menu      *state;     /* 指向下层状态机 */
-} MenuUI;
+class MenuUI
+{
+public:
+    void init(Menu *state);      ///< 绑定状态机
+    void poll();                 ///< 每 50ms: 扫描按键
+    void render();               ///< 渲染菜单到 OLED
+    int  selected() const;       ///< -1=未确认, >=0=菜单索引
+    bool inTask() const;         ///< 任务运行中?
 
-/** 绑定状态机 */
-void menu_ui_init(MenuUI *ui, Menu *state);
+private:
+    Menu  *state_ = nullptr;
+    int    upCnt_ = 0,  upLatched_ = 0;
+    int    dnCnt_ = 0,  dnLatched_ = 0;
+    int    okCnt_ = 0,  okLatched_ = 0;
 
-/** 每 10~50ms 调一次：扫描按键 → 更新状态机（不碰 OLED） */
-void menu_ui_poll(MenuUI *ui);
-
-/** 渲染菜单画面到 OLED（只在浏览模式调用） */
-void menu_ui_render(MenuUI *ui);
-
-/** 返回已确认的菜单项索引，-1=未确认 */
-int  menu_ui_selected(MenuUI *ui);
-
-/** 任务运行中返回 1 */
-int  menu_ui_in_task(MenuUI *ui);
-
-#ifdef __cplusplus
-}
-#endif
+    static constexpr int DEBOUNCE = 3;
+    bool readBtn_(int raw, int &cnt, int &latched);
+};
 
 #endif
